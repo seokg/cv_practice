@@ -1,0 +1,152 @@
+#include <iostream>
+#include <sstream>
+#include <stdio.h>
+#include <string>
+#include <time.h>
+
+#include "use_opencv.h"
+
+#ifndef _CRT_SECURE_NO_WARNINGS
+# define _CRT_SECURE_NO_WARNINGS
+#endif
+
+
+using namespace cv;
+using namespace std;
+
+
+//Global variables---------------------------------------------------------------------------------
+int boardHeight = 6;
+int boardWidth = 9;
+Size cbSize = Size(boardHeight, boardWidth);
+string filename = "data.yml";
+
+bool doneYet = false;
+
+const int FRAME_WIDTH = 640;
+const int FRAME_HEIGHT = 480;
+
+static void help()
+{
+	cout << "This is a pose estimation sample." << endl
+		<< "It may be any OpenCV supported file format XML/YAML." << endl;
+}
+
+// Main -------------------------------------------------------------------------------------------
+int main(int argc, char* argv[])
+{
+	help();
+
+	// setup a filestorage object to read camera params from file
+	FileStorage fs;
+	fs.open(filename, FileStorage::READ);
+	Mat intrinsics, distortion;
+	fs["camera_matrix"] >> intrinsics;
+	fs["distortion_coefficients"] >> distortion;
+	fs.release();
+
+	// setup matrix for storage
+	Mat webcamImage, gray, one;
+	Mat rvec = Mat(Size(3, 1), CV_64F); //rotation
+	Mat tvec = Mat(Size(3, 1), CV_64F); // translation
+
+	vector<Point2d> imagePoints, imageFramePoints, imageOrigin;
+	vector<Point3d> boardPoints, framePoints;
+	//generate vectors for the points on the chessboard
+	for (int i = 0; i < boardWidth; i++){
+		for (int j = 0; j < boardHeight; j++){
+
+			boardPoints.push_back(Point3d(double(i), double(j), 0.0));
+
+		}
+	}
+	//generate points in the reference frame
+	framePoints.push_back(Point3d(0.0, 0.0, 0.0));
+	framePoints.push_back(Point3d(5.0, 0.0, 0.0));
+	framePoints.push_back(Point3d(0.0, 5.0, 0.0));
+	framePoints.push_back(Point3d(0.0, 0.0, 5.0));
+
+	//webcam
+	VideoCapture capture;
+	capture.open(0);
+	capture.set(CV_CAP_PROP_FRAME_WIDTH, FRAME_WIDTH);
+	capture.set(CV_CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT);
+
+	while (!doneYet){
+
+		// convert image to matrix
+		capture.read(webcamImage);
+		// convet to gray
+		cvtColor(webcamImage, gray, COLOR_BGR2GRAY);
+		//chess board detection
+		bool found = findChessboardCorners(gray, cbSize, imagePoints, CALIB_CB_FAST_CHECK);
+
+		if (found){
+			 //find the camera extrinsic parameters
+			 solvePnP( Mat(boardPoints), Mat(imagePoints), intrinsics, distortion, rvec, tvec, false );
+			 //project the reference frame onto the image
+			 projectPoints(framePoints, rvec, tvec, intrinsics, distortion, imageFramePoints );
+			 
+
+			 //DRAWING
+			 //draw the reference frame on the image
+			 circle(webcamImage, (Point) imagePoints[0], 4 ,CV_RGB(255,0,0) );
+			 
+			 Point one, two, three;
+			 one.x=10; one.y=10;
+			 two.x = 60; two.y = 10;
+			 three.x = 10; three.y = 60;
+
+			 line(webcamImage, one, two, CV_RGB(255,0,0) );
+			 line(webcamImage, one, three, CV_RGB(0,255,0) );
+
+
+			 line(webcamImage, imageFramePoints[0], imageFramePoints[1], CV_RGB(255,0,0), 2 );
+			 line(webcamImage, imageFramePoints[0], imageFramePoints[2], CV_RGB(0,255,0), 2 );
+			 line(webcamImage, imageFramePoints[0], imageFramePoints[3], CV_RGB(0,0,255), 2 );
+			 
+
+			 
+			 //show the pose estimation data
+			 cout //<< fixed << setprecision(2) 
+				 << "rvec = ["
+				  << rvec.at<double>(0,0) << ", "
+				  << rvec.at<double>(1,0) << ", "
+				  << rvec.at<double>(2,0) << "] \t" << "tvec = ["
+				  << tvec.at<double>(0,0) << ", "
+				  << tvec.at<double>(1,0) << ", "
+				  << tvec.at<double>(2,0) << "]" << endl;
+
+		}
+
+		 //show the image on screen
+		 namedWindow("OpenCV Webcam", 0);
+		 imshow("OpenCV Webcam", webcamImage);
+
+
+		 //show the gray image
+		 //namedWindow("Gray Image", CV_WINDOW_AUTOSIZE);
+		 //imshow("Gray Image", gray);
+
+
+		 waitKey(10);
+
+
+
+
+	}
+	return 0;
+
+	/*
+	Mat img = imread(argv[1], CV_LOAD_IMAGE_GRAYSCALE);
+	bool found = findChessboardCorners(img, cbSize, ptvec, CV_CALIB_CB_ADAPTIVE_THRESH);
+	*/
+
+	/*
+	vector<Point3f> boardPoints;
+	// fill the array
+	...
+
+	solvePnP(Mat(boardPoints), Mat(foundBoardCorners), cameraMatrix,distCoeffs, rvec, tvec, false);
+	*/
+}
